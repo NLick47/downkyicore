@@ -29,6 +29,8 @@ public class PublicationMedia : BindableBase
         set => SetProperty(ref isSelected, value);
     }
 
+    public string CoverUrl { get; set; }
+
     private Bitmap cover;
 
     public Bitmap Cover
