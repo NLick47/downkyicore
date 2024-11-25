@@ -8,10 +8,8 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Avalonia.Media.Imaging;
-using Avalonia.Threading;
 using DownKyi.Core.BiliApi.VideoStream;
 using DownKyi.Core.Storage;
-using DownKyi.Core.Storage.Database;
 using DownKyi.Core.Utils;
 using DownKyi.CustomControl;
 using DownKyi.Events;
@@ -182,8 +180,7 @@ namespace DownKyi.ViewModels
 
             // 结束任务
             _tokenSource?.Cancel();
-            _tokenSource?.Dispose();
-            _tokenSource = null;
+
             var parameter = new NavigationParam
             {
                 ViewName = ParentView,
@@ -381,12 +378,13 @@ namespace DownKyi.ViewModels
                 //Pager.Current = old;
                 return false;
             }
+
             Medias.Clear();
             IsSelectAll = false;
             LoadingVisibility = true;
             NoDataVisibility = false;
-            
-            _ = UpdatePublication(current);
+
+            UpdatePublication(current);
 
             return true;
         }
@@ -404,21 +402,18 @@ namespace DownKyi.ViewModels
             return sb.ToString();
         }
 
-        private async Task UpdatePublication(int current)
+        private async void UpdatePublication(int current)
         {
-            _tokenSource?.Cancel();
             // 是否正在获取数据
             // 在所有的退出分支中都需要设为true
             IsEnabled = false;
 
             var tab = TabHeaders[SelectTabId];
-            var startTime = TimeZone.CurrentTimeZone.ToLocalTime(new DateTime(1970, 1, 1)); // 当地时区
 
-            _tokenSource = new CancellationTokenSource();
-            var cancellationToken = _tokenSource.Token;
-            var defaultPic = ImageHelper.LoadFromResource(new Uri("avares://DownKyi/Resources/video-placeholder.png"));
-            await Task.Run(async () =>
+            await Task.Run(() =>
             {
+                var cancellationToken = _tokenSource.Token;
+
                 var publications = Core.BiliApi.Users.UserSpace.GetPublication(_mid, current, _videoNumberInPage, tab.Id);
                 if (publications == null)
                 {
@@ -436,10 +431,27 @@ namespace DownKyi.ViewModels
                     NoDataVisibility = true;
                     return;
                 }
+
                 foreach (var video in videos)
                 {
                     // 查询、保存封面
                     var coverUrl = video.Pic;
+                    Bitmap cover;
+                    if (coverUrl == null || coverUrl == "")
+                    {
+                        cover = null; // new BitmapImage(new Uri($"pack://application:,,,/Resources/video-placeholder.png"));
+                    }
+                    else
+                    {
+                        if (!coverUrl.ToLower().StartsWith("http"))
+                        {
+                            coverUrl = $"https:{video.Pic}";
+                        }
+
+                        var storageCover = new StorageCover();
+                        cover = storageCover.GetCoverThumbnail(video.Aid, video.Bvid, -1, coverUrl, 200, 125);
+                    }
+
                     // 播放数
                     var play = string.Empty;
                     if (video.Play > 0)
@@ -450,6 +462,8 @@ namespace DownKyi.ViewModels
                     {
                         play = "--";
                     }
+
+                    var startTime = TimeZone.CurrentTimeZone.ToLocalTime(new DateTime(1970, 1, 1)); // 当地时区
                     var dateCTime = startTime.AddSeconds(video.Created);
                     var ctime = dateCTime.ToString("yyyy-MM-dd");
 
@@ -459,12 +473,11 @@ namespace DownKyi.ViewModels
                         {
                             Avid = video.Aid,
                             Bvid = video.Bvid,
-                            Cover = defaultPic,
+                            Cover = cover ?? ImageHelper.LoadFromResource(new Uri("avares://DownKyi/Resources/video-placeholder.png")),
                             Duration = video.Length,
                             Title = video.Title,
                             PlayNumber = play,
-                            CreateTime = ctime,
-                            CoverUrl = coverUrl,
+                            CreateTime = ctime
                         };
                         _medias.Add(media);
 
@@ -472,31 +485,15 @@ namespace DownKyi.ViewModels
                         NoDataVisibility = false;
                     });
 
+                    // 判断是否该结束线程，若为true，跳出循环
                     if (cancellationToken.IsCancellationRequested)
                     {
                         break;
                     }
                 }
-                IsEnabled = true;
-                await UpdateMediaCovers(cancellationToken);
-
-            }, cancellationToken).ContinueWith(t => { });
-            
+            }, (_tokenSource = new CancellationTokenSource()).Token);
+            IsEnabled = true;
         }
-
-        async Task UpdateMediaCovers(CancellationToken cancellationToken)
-        {
-            var storageCover = new StorageCover();
-            foreach (var media in _medias.ToList())
-            {
-                if (cancellationToken.IsCancellationRequested)
-                {
-                    break;
-                }
-                media.Cover = await storageCover.GetCoverThumbnailAsync(media.Avid, media.Bvid, -1, media.CoverUrl, 200, 125);
-            }
-        }
-
 
         /// <summary>
         /// 初始化页面数据
