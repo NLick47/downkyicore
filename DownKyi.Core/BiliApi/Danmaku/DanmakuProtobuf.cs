@@ -70,7 +70,6 @@ public static class DanmakuProtobuf
 
         return danmakuList;
     }
-
     /// <summary>
     /// 下载所有弹幕，返回弹幕列表
     /// </summary>
