@@ -4,49 +4,23 @@ using System.Text;
 using DownKyi.Core.BiliApi.Login;
 using DownKyi.Core.Logging;
 using DownKyi.Core.Settings;
-using Newtonsoft.Json;
 
 namespace DownKyi.Core.BiliApi;
 
 internal static class WebClient
 {
-    internal class SpiOrigin
+    private static string GetRandomBuvid3()
     {
-        [JsonProperty("data")] public Spi? Data { get; set; }
-        public int Code { get; set; }
-        public string? Message { get; set; }
-    }
+        // 随机生成10位字符串
+        const string str = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+        var random = new Random();
+        var result = new StringBuilder();
+        for (var i = 0; i < 10; i++)
+        {
+            result.Append(str[random.Next(str.Length)]);
+        }
 
-    internal class Spi
-    {
-        [JsonProperty("b_3")] public string? Bvuid3 { get; set; }
-        [JsonProperty("b_4")] public string? Bvuid4 { get; set; }
-    }
-
-    private static string? _bvuid3 = string.Empty;
-    private static string? _bvuid4 = string.Empty;
-
-    // private static string GetRandomBuvid3()
-    // {
-    //     // 随机生成10位字符串
-    //     const string str = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-    //     var random = new Random();
-    //     var result = new StringBuilder();
-    //     for (var i = 0; i < 10; i++)
-    //     {
-    //         result.Append(str[random.Next(str.Length)]);
-    //     }
-    //
-    //     return result.ToString();
-    // }
-
-    private static void GetBuvid()
-    {
-        const string url = "https://api.bilibili.com/x/frontend/finger/spi";
-        var response = RequestWeb(url);
-        var spi = JsonConvert.DeserializeObject<SpiOrigin>(response);
-        _bvuid3 = spi?.Data?.Bvuid3;
-        _bvuid4 = spi?.Data?.Bvuid4;
+        return result.ToString();
     }
 
     /// <summary>
@@ -58,7 +32,8 @@ internal static class WebClient
     /// <param name="parameters"></param>
     /// <param name="retry"></param>
     /// <returns></returns>
-    public static string RequestWeb(string url, string? referer = null, string method = "GET", Dictionary<string, string>? parameters = null, int retry = 3)
+    public static string RequestWeb(string url, string? referer = null, string method = "GET",
+        Dictionary<string, string>? parameters = null, int retry = 3, bool needRandomBvuid3 = false)
     {
         // 重试次数
         if (retry <= 0)
@@ -87,11 +62,6 @@ internal static class WebClient
 
         try
         {
-            if (string.IsNullOrEmpty(_bvuid3) && url != "https://api.bilibili.com/x/frontend/finger/spi")
-            {
-                GetBuvid();
-            }
-
             var request = (HttpWebRequest)WebRequest.Create(url);
             request.Method = method;
             request.Timeout = 30 * 1000;
@@ -111,19 +81,20 @@ internal static class WebClient
             // 构造cookie
             if (!url.Contains("getLogin"))
             {
-                request.Headers["origin"] = "https://www.bilibili.com";
+                request.Headers["origin"] = "https://m.bilibili.com";
 
                 var cookies = LoginHelper.GetLoginInfoCookies();
-                request.CookieContainer = cookies ?? new CookieContainer();
-
-                if (!string.IsNullOrEmpty(_bvuid3))
+                if (cookies != null)
                 {
-                    request.CookieContainer.Add(new Cookie("buvid3", _bvuid3, "/", ".bilibili.com"));
+                    request.CookieContainer = cookies;
                 }
-
-                if (!string.IsNullOrEmpty(_bvuid4))
+                else
                 {
-                    request.CookieContainer.Add(new Cookie("buvid4", _bvuid4, "/", ".bilibili.com"));
+                    request.CookieContainer = new CookieContainer();
+                    if (needRandomBvuid3)
+                    {
+                        request.CookieContainer.Add(new Cookie("buvid3", GetRandomBuvid3(), "/", ".bilibili.com"));
+                    }
                 }
             }
 
