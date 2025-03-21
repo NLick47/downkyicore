@@ -19,7 +19,7 @@ namespace DownKyi.Core.BiliApi.History
         /// <param name="ps">每页项数</param>
         /// <param name="business">历史记录ID类型</param>
         /// <returns></returns>
-        public static HistoryData? GetHistory(long startId, long startTime, int ps = 30, HistoryBusiness business = HistoryBusiness.ARCHIVE)
+        public static HistoryData? GetHistory(long startId, long startTime,int ps = 30, HistoryBusiness business = HistoryBusiness.ARCHIVE)
         {
             var businessStr = string.Empty;
             switch (business)
