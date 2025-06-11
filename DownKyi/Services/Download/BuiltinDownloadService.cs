@@ -10,12 +10,15 @@ using DownKyi.Core.BiliApi.VideoStream.Models;
 using DownKyi.Core.Logging;
 using DownKyi.Core.Settings;
 using DownKyi.Core.Utils;
+using DownKyi.Models;
 using DownKyi.PrismExtension.Dialog;
 using DownKyi.Utils;
 using DownKyi.ViewModels.DownloadManager;
 using Downloader;
+using Microsoft.Extensions.Logging;
 using Console = DownKyi.Core.Utils.Debugging.Console;
 using DownloadStatus = DownKyi.Models.DownloadStatus;
+using LogLevel = Microsoft.Extensions.Logging.LogLevel;
 
 namespace DownKyi.Services.Download;
 
@@ -53,6 +56,17 @@ public class BuiltinDownloadService : DownloadService, IDownloadService
         var downloadVideo = BaseDownloadVideo(downloading);
 
         return DownloadVideo(downloading, downloadVideo);
+    }
+
+    private string DownloadVideo(DownloadingItem downloading, VideoPlayUrlBasic? downloadVideo)
+    {
+        return DownloadVideo(downloading, new PlayUrlDashVideo
+        {
+            Id = downloadVideo.Id,
+            Codecs = downloadVideo.Codecs,
+            BaseUrl = downloadVideo.BaseUrl,
+            BackupUrl = downloadVideo.BackupUrl
+        });
     }
 
     /// <summary>
@@ -302,7 +316,10 @@ public class BuiltinDownloadService : DownloadService, IDownloadService
         path = path.TrimEnd('/').TrimEnd('\\');
         var requestConfiguration = new RequestConfiguration
         {
-            CookieContainer = LoginHelper.GetLoginInfoCookies(),
+            Headers = new WebHeaderCollection()
+            {
+                { "cookie", LoginHelper.GetLoginInfoCookiesString() }
+            },
             UserAgent = SettingsManager.GetInstance().GetUserAgent(),
             Referer = "https://www.bilibili.com",
         };
@@ -323,33 +340,42 @@ public class BuiltinDownloadService : DownloadService, IDownloadService
         };
         foreach (var url in urls)
         {
-            var downloader = new Downloader.DownloadService(downloadOpt);
+            var downloader = downloading.DownloadService;
             var isComplete = false;
-            downloader.DownloadFileCompleted += (_, _) =>
+            if (downloading.DownloadService == null)
             {
-                if (File.Exists(Path.Combine(path, localFileName)))
+                downloader = new Downloader.DownloadService(downloadOpt);
+                downloader.DownloadFileCompleted += (_, _) =>
                 {
+                    if (!File.Exists(Path.Combine(path, localFileName))) return;
                     isComplete = true;
-                }
-            };
-            downloader.DownloadProgressChanged += (_, args) =>
-            {
-                // 下载进度百分比
-                downloading.Progress = (float)args.ProgressPercentage;
-
-                // 下载大小
-                downloading.DownloadingFileSize = Format.FormatFileSize(args.ReceivedBytesSize) + "/" + Format.FormatFileSize(args.TotalBytesToReceive);
-
-                // 下载速度
-                var speed = (long)args.BytesPerSecondSpeed;
-                downloading.SpeedDisplay = Format.FormatSpeed(speed);
-                // 最大下载速度
-                if (downloading.Downloading.MaxSpeed < speed)
+                    downloading.DownloadService = null;
+                };
+                downloader.DownloadProgressChanged += (_, args) =>
                 {
-                    downloading.Downloading.MaxSpeed = speed;
-                }
-            };
-            downloader.DownloadFileTaskAsync(url, Path.Combine(path, localFileName));
+                    // 下载进度百分比
+                    downloading.Progress = (float)args.ProgressPercentage;
+
+                    // 下载大小
+                    downloading.DownloadingFileSize = Format.FormatFileSize(args.ReceivedBytesSize) + "/" + Format.FormatFileSize(args.TotalBytesToReceive);
+
+                    // 下载速度
+                    var speed = (long)args.BytesPerSecondSpeed;
+                    downloading.SpeedDisplay = Format.FormatSpeed(speed);
+                    // 最大下载速度
+                    if (downloading.Downloading.MaxSpeed < speed)
+                    {
+                        downloading.Downloading.MaxSpeed = speed;
+                    }
+                };
+                downloading.DownloadService = downloader;
+                downloader.DownloadFileTaskAsync(url, Path.Combine(path, localFileName)).ConfigureAwait(false);
+            }
+            else
+            {
+                downloader?.Resume();
+            }
+
             // 阻塞当前任务，监听暂停事件
             while (!isComplete)
             {
@@ -358,7 +384,7 @@ public class BuiltinDownloadService : DownloadService, IDownloadService
                 {
                     case DownloadStatus.Pause:
                         // 暂停下载
-                        downloader.Pause();
+                        downloader?.Pause();
                         // 通知UI，并阻塞当前线程
                         Pause(downloading);
                         break;
