@@ -10,6 +10,7 @@ using DownKyi.Core.BiliApi.VideoStream.Models;
 using DownKyi.Core.Logging;
 using DownKyi.Core.Settings;
 using DownKyi.Core.Utils;
+using DownKyi.Models;
 using DownKyi.PrismExtension.Dialog;
 using DownKyi.Utils;
 using DownKyi.ViewModels.DownloadManager;
@@ -55,6 +56,17 @@ public class BuiltinDownloadService : DownloadService, IDownloadService
         var downloadVideo = BaseDownloadVideo(downloading);
 
         return DownloadVideo(downloading, downloadVideo);
+    }
+
+    private string DownloadVideo(DownloadingItem downloading, VideoPlayUrlBasic? downloadVideo)
+    {
+        return DownloadVideo(downloading, new PlayUrlDashVideo
+        {
+            Id = downloadVideo.Id,
+            Codecs = downloadVideo.Codecs,
+            BaseUrl = downloadVideo.BaseUrl,
+            BackupUrl = downloadVideo.BackupUrl
+        });
     }
 
     /// <summary>
@@ -304,7 +316,10 @@ public class BuiltinDownloadService : DownloadService, IDownloadService
         path = path.TrimEnd('/').TrimEnd('\\');
         var requestConfiguration = new RequestConfiguration
         {
-            CookieContainer = LoginHelper.GetLoginInfoCookies(),
+            Headers = new WebHeaderCollection()
+            {
+                { "cookie", LoginHelper.GetLoginInfoCookiesString() }
+            },
             UserAgent = SettingsManager.GetInstance().GetUserAgent(),
             Referer = "https://www.bilibili.com",
         };
